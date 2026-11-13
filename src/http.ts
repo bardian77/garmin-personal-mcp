@@ -31,8 +31,21 @@ export function createFetchHandler(opts: FetchHandlerOptions): (request: Request
 
   return async (request) => {
     const url = new URL(request.url);
-    if (!paths.has(url.pathname)) return new Response("Not found", { status: 404 });
-    const given = Buffer.from(request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "");
+           // Accept the secret either as `Authorization: Bearer <token>` on /mcp, or as the
+       // last path segment (/mcp/<token>) for clients that cannot send custom headers.
+       let fromPath: string | undefined;
+       if (!paths.has(url.pathname)) {
+         const slash = url.pathname.lastIndexOf("/");
+         const base = url.pathname.slice(0, slash);
+         const segment = url.pathname.slice(slash + 1);
+         if (slash <= 0 || !paths.has(base) || !segment) return new Response("Not found", { status: 404 });
+         try {
+           fromPath = decodeURIComponent(segment);
+         } catch {
+           return new Response("Not found", { status: 404 });
+         }
+       }
+       const given = Buffer.from(fromPath ?? request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "");
     if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
       return new Response("Unauthorized", { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
     }
